@@ -35,3 +35,15 @@ python train_metric.py --mode run
 ## test_distance_perception.py
 
 测试一下图神经网络给出的嵌入算出的距离是否符合直觉，尤其是是否符合人类前注意阶段的加工特征，和项目其它代码完全独立。
+
+## physics.py
+
+Ising model求解器。
+
+## dynamics.py
+
+快慢动力学过程+DPP子集选择。
+
+## game.py
+
+运行游戏。

@@ -4,6 +4,8 @@ data/
 calculate_koans.py
 __pycache__/
 models/
+hypotheses_log/
+模拟结果.md
 
 *.py[cod]
 *$py.class
