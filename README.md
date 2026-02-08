@@ -1,5 +1,7 @@
 # Zendo_Ising_Simulation
 
+以下文件基本按照运行顺序排列，顺着跑即可。
+
 ## calculate_koans.py
 
 单纯计算所有可能的合法公案数量，和代码其他部分完全独立。
@@ -30,11 +32,29 @@ python train_metric.py --mode run
 
 ## precompute.py
 
-算好公案两两之间在各属性维度上的距离保存备用。
+算好公案两两之间在各属性维度上的距离保存备用（基于GNN嵌入）。
 
-## test_distance_perception.py
+## compute_rational_distance.py
 
-测试一下图神经网络给出的嵌入算出的距离是否符合直觉，尤其是是否符合人类前注意阶段的加工特征，和项目其它代码完全独立。
+基于匈牙利算法计算理性距离：对每对公案找到最佳积木映射，然后计算各属性维度的距离。
+
+使用方式：
+```bash
+python compute_rational_distance.py
+```
+
+## fuse_distances.py
+
+融合GNN距离和理性距离，按照认知偏好权重（默认30% GNN + 70% Rational）生成最终距离。
+
+使用方式：
+```bash
+python fuse_distances.py
+```
+
+## test_distance.py
+
+测试一下图神经网络给出的嵌入和匈牙利匹配算出的距离是否符合直觉，尤其是是否符合人类前注意阶段和特征整合阶段的加工特征，和项目其它代码完全独立。
 
 ## physics.py
 

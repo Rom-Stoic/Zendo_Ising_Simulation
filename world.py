@@ -14,7 +14,7 @@ class KoanAtlas:
     3. 提供向量化的成本矩阵计算接口，供 Optimal Transport (FGW) 使用。
     """
 
-    def __init__(self):
+    def __init__(self, load_distances=True):
         print("正在初始化 Zendo 公案图册 (Koan Atlas)...")
         
         # 1. 生成所有合法公案
@@ -47,8 +47,12 @@ class KoanAtlas:
         print(f"结构张量形状: {self.structure_tensor.shape}")
         print(f"质量张量形状: {self.mass_tensor.shape}")
 
-        # 4. 加载预计算的距离基石 (Critical for Ising Model)
-        self.load_precomputed_distances()
+        # 4. 可选加载预计算的距离基石 (Critical for Ising Model)
+        if load_distances:
+            self.load_precomputed_distances()
+        else:
+            print("⚠️  跳过距离张量加载 (仅用于距离预计算阶段)")
+            self.dist_basis = None
 
     def get_feature_cost_matrix(self, idx_a, idx_b, weights):
         """

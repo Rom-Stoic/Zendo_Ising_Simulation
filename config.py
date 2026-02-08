@@ -113,9 +113,22 @@ class Config:
         return base_strength * (Config.PINNING_FIELD_DECAY_RATE ** round_num)
     
     # =========================================================================
-    # 6. 预计算路径 (Precompute Paths)
+    # 6. 认知融合参数 (Cognitive Fusion)
+    # =========================================================================
+    
+    # 距离计算的认知偏好权重
+    # GNN_WEIGHT: 直觉层面（图神经网络嵌入）- "模糊的相似感"
+    # RATIONAL_WEIGHT: 理性层面（匈牙利匹配）- "精确的属性核对"
+    GNN_WEIGHT = 0.3
+    RATIONAL_WEIGHT = 0.7
+    
+    # =========================================================================
+    # 7. 预计算路径 (Precompute Paths)
     # =========================================================================
     
     PRECOMPUTED_DIR = "data"
-    DIST_TENSOR_FILE = os.path.join(PRECOMPUTED_DIR, "dist_basis_5127.npy")
+    DIST_GNN_FILE = os.path.join(PRECOMPUTED_DIR, "dist_basis_5127.npy")        # GNN距离
+    DIST_RATIONAL_FILE = os.path.join(PRECOMPUTED_DIR, "dist_rational_5127.npy") # 匈牙利匹配距离
+    DIST_FUSED_FILE = os.path.join(PRECOMPUTED_DIR, "dist_fused_5127.npy")      # 最终融合距离
+    DIST_TENSOR_FILE = DIST_FUSED_FILE # 默认使用融合距离
     NUM_CORES = -1

@@ -32,12 +32,13 @@ def precompute_distances():
         dist_basis[:, :, i] = cdist(emb, emb, metric='euclidean')
 
     # 保存到 Config 指定的位置
-    save_path = Config.DIST_TENSOR_FILE
+    save_path = Config.DIST_GNN_FILE
     # 确保目录存在
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
+    
     np.save(save_path, dist_basis)
-    print(f"✅ 成功！全宇宙距离基石已保存至: {save_path}")
+    print(f"✅ 成功！GNN 距离基石已保存至: {save_path} (等待与理性距离融合)")
     print(f"📦 文件大小约为: {os.path.getsize(save_path) / (1024**2):.2f} MB")
 
 if __name__ == "__main__":

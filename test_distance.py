@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from world import KoanAtlas
 from config import Config
 
@@ -113,41 +114,101 @@ def find_koan_advanced(atlas, num_blocks=None, colors=None, sizes=None,
     return None
 
 # ==========================================
-# 📊 对比核心逻辑 (已修复 f-string bug)
+# 📊 对比核心逻辑 (增强版：显示三种距离)
 # ==========================================
-def compare_pair(atlas, idx_a, idx_b, expectation=""):
+def compare_pair(atlas, idx_a, idx_b, dist_gnn, dist_rational, expectation=""):
     print(f"🅰️  {describe_koan(atlas, idx_a)}")
     print(f"🅱️  {describe_koan(atlas, idx_b)}")
     print(f"\033[3mExpectation: {expectation}\033[0m\n")
     
-    # 获取预计算距离
-    d_vec = atlas.dist_basis[idx_a, idx_b] # [Color, Size, Ground, Struct]
+    # 获取三种距离
+    d_fused = atlas.dist_basis[idx_a, idx_b]      # 融合距离 (当前使用)
+    d_gnn = dist_gnn[idx_a, idx_b]                # GNN距离 (直觉)
+    d_rat = dist_rational[idx_a, idx_b]           # Rational距离 (理性)
     
-    # 定义颜色变量，避免 Python f-string 反斜杠问题
+    # 定义颜色变量
     C_RED = "\033[31m"
     C_YEL = "\033[33m"
     C_GRN = "\033[32m"
     C_CYN = "\033[36m"
     C_WHT = "\033[1;37m"
+    C_MAG = "\033[35m"
+    C_BLU = "\033[34m"
     
-    # 打印仪表盘
-    print(f"  Color:  {draw_bar(d_vec[0], color_code=C_RED)}")
-    print(f"  Size:   {draw_bar(d_vec[1], color_code=C_YEL)}")
-    print(f"  Ground: {draw_bar(d_vec[2], color_code=C_GRN)}")
-    print(f"  Struct: {draw_bar(d_vec[3], color_code=C_CYN)}")
+    dim_names = ["Color", "Size", "Ground", "Struct"]
+    dim_colors = [C_RED, C_YEL, C_GRN, C_CYN]
     
-    # 加权总和
+    # 打印三路对比
+    print("  ┌─ 📊 三路距离对比 ─────────────────────────────────────────┐")
+    print(f"  │ {'维度':<8} │ {'GNN (直觉)':<25} │ {'Rational (理性)':<25} │ {'Fused (最终)':<25} │")
+    print("  ├──────────┼───────────────────────────┼───────────────────────────┼───────────────────────────┤")
+    
+    for i, name in enumerate(dim_names):
+        gnn_bar = draw_bar(d_gnn[i], color_code=dim_colors[i])
+        rat_bar = draw_bar(d_rat[i], color_code=dim_colors[i])
+        fus_bar = draw_bar(d_fused[i], color_code=dim_colors[i])
+        
+        # 去除ANSI颜色计算实际长度，统一对齐
+        # 简化处理：直接固定宽度
+        print(f"  │ {name:<8} │ {gnn_bar:<25} │ {rat_bar:<25} │ {fus_bar:<25} │")
+    
+    print("  ├──────────┴───────────────────────────┴───────────────────────────┴───────────────────────────┤")
+    
+    # 加权总和 (使用统一权重)
     weights = Config.INIT_ATTENTION
-    total = np.dot(d_vec, weights)
-    print(f"  {'─'*35}")
-    print(f"  TOTAL:  {draw_bar(total, max_val=2.5, color_code=C_WHT)}")
+    total_gnn = np.dot(d_gnn, weights)
+    total_rat = np.dot(d_rat, weights)
+    total_fused = np.dot(d_fused, weights)
+    
+    print(f"  │ {'TOTAL':<8} │ {draw_bar(total_gnn, max_val=2.5, color_code=C_MAG):<25} │ "
+          f"{draw_bar(total_rat, max_val=2.5, color_code=C_BLU):<25} │ "
+          f"{draw_bar(total_fused, max_val=2.5, color_code=C_WHT):<25} │")
+    print("  └────────────────────────────────────────────────────────────────────────────────────────────┘")
+    
+    # 显示融合权重提示
+    print(f"\n  💡 融合公式: {Config.GNN_WEIGHT*100:.0f}% GNN + {Config.RATIONAL_WEIGHT*100:.0f}% Rational")
+    print(f"  📈 差异分析:")
+    
+    # 计算各维度的最大差异来源
+    for i, name in enumerate(dim_names):
+        if abs(d_gnn[i] - d_rat[i]) > 0.1:  # 显著差异阈值
+            if d_gnn[i] > d_rat[i]:
+                print(f"     • {name}: GNN 高 {d_gnn[i] - d_rat[i]:.3f} (直觉感知更强)")
+            else:
+                print(f"     • {name}: Rational 高 {d_rat[i] - d_gnn[i]:.3f} (理性匹配更精确)")
+
 
 # ==========================================
 # 🚀 主程序
 # ==========================================
 def run_perception_test():
-    print("🧠 Loading Atlas & Neural Embeddings...")
+    print("🧠 Loading Atlas & Distance Tensors...")
+    print("="*60)
+    
+    # 1. 加载公案图册 (默认加载融合距离到 dist_basis)
     atlas = KoanAtlas()
+    
+    # 2. 额外加载 GNN 和 Rational 距离用于对比
+    print("📂 Loading GNN Distance (直觉层)...")
+    if not os.path.exists(Config.DIST_GNN_FILE):
+        print(f"\033[31m❌ GNN距离文件不存在: {Config.DIST_GNN_FILE}\033[0m")
+        print("请先运行: python train_metric.py --mode run && python precompute.py")
+        return
+    dist_gnn = np.load(Config.DIST_GNN_FILE)
+    print(f"   ✅ 形状: {dist_gnn.shape}")
+    
+    print("📂 Loading Rational Distance (理性层)...")
+    if not os.path.exists(Config.DIST_RATIONAL_FILE):
+        print(f"\033[31m❌ Rational距离文件不存在: {Config.DIST_RATIONAL_FILE}\033[0m")
+        print("请先运行: python compute_rational_distance.py")
+        return
+    dist_rational = np.load(Config.DIST_RATIONAL_FILE)
+    print(f"   ✅ 形状: {dist_rational.shape}")
+    
+    print(f"📂 Fused Distance (融合层) 已加载到 atlas.dist_basis")
+    print(f"   ✅ 形状: {atlas.dist_basis.shape}")
+    print(f"   ⚖️  权重: {Config.GNN_WEIGHT*100:.0f}% GNN + {Config.RATIONAL_WEIGHT*100:.0f}% Rational")
+    print("="*60)
     
     # -------------------------------------------------
     # 1. 基础对照组 (Identity)
@@ -158,7 +219,7 @@ def run_perception_test():
     
     # 🛠️ [CRITICAL FIX] 使用 'is not None'，因为索引 0 是合法的但会被 if 判为 False
     if k1 is not None: 
-        compare_pair(atlas, k1, k1, "所有距离应严格为 0")
+        compare_pair(atlas, k1, k1, dist_gnn, dist_rational, "所有距离应严格为 0")
     else:
         print("\033[31m❌ 找不到单块样本 (Check data generation)\033[0m")
 
@@ -180,7 +241,7 @@ def run_perception_test():
         k_blue = find_koan_advanced(atlas, num_blocks=1, colors=[target_color])
 
     if k_red is not None and k_blue is not None:
-        compare_pair(atlas, k_red, k_blue, "Color 距离应较高，Size 可能也有差异")
+        compare_pair(atlas, k_red, k_blue, dist_gnn, dist_rational, "Color 距离应较高，Size 可能也有差异")
     else:
         print("\033[31m❌ 找不到两种不同颜色的单块样本\033[0m")
 
@@ -191,7 +252,7 @@ def run_perception_test():
     k_small = find_koan_advanced(atlas, num_blocks=1, sizes=['S'])
     k_large = find_koan_advanced(atlas, num_blocks=1, sizes=['L'])
     if k_small is not None and k_large is not None:
-        compare_pair(atlas, k_small, k_large, "Size 距离高，Color 可能会有杂讯")
+        compare_pair(atlas, k_small, k_large, dist_gnn, dist_rational, "Size 距离高，Color 可能会有杂讯")
     else:
         print("\033[31m❌ 找不到不同尺寸的单块样本\033[0m")
 
@@ -205,7 +266,7 @@ def run_perception_test():
     k_stack = find_koan_advanced(atlas, num_blocks=2, max_ground=1)
     
     if k_flat is not None and k_stack is not None:
-        compare_pair(atlas, k_flat, k_stack, "Ground 距离应显著，Struct 也会有差异")
+        compare_pair(atlas, k_flat, k_stack, dist_gnn, dist_rational, "Ground 距离应显著，Struct 也会有差异")
     else:
         print("\033[31m❌ 找不到接地/悬空对比样本\033[0m")
 
@@ -218,7 +279,7 @@ def run_perception_test():
     k_tri = find_koan_advanced(atlas, num_blocks=3, num_edges=3)
     
     if k_line is not None and k_tri is not None:
-        compare_pair(atlas, k_line, k_tri, "Structure 距离应占主导")
+        compare_pair(atlas, k_line, k_tri, dist_gnn, dist_rational, "Structure 距离应占主导")
     else:
         print("\033[31m⚠️ 未找到完美的直线/三角形样本，可能受物理限制\033[0m")
 
@@ -230,7 +291,7 @@ def run_perception_test():
     k_three = find_koan_advanced(atlas, num_blocks=3)
     
     if k_one is not None and k_three is not None:
-        compare_pair(atlas, k_one, k_three, "Struct 和 Size (总量) 都应该有巨大差异")
+        compare_pair(atlas, k_one, k_three, dist_gnn, dist_rational, "Struct 应该有巨大差异")
     else:
         print("\033[31m❌ 找不到 1 vs 3 块的样本\033[0m")
 
@@ -267,7 +328,7 @@ def run_perception_test():
         if idx_bind_a is not None and idx_bind_b is not None: break
     
     if idx_bind_a is not None and idx_bind_b is not None:
-        compare_pair(atlas, idx_bind_a, idx_bind_b, "距离应 > 0 (但可能受结构差异干扰)")
+        compare_pair(atlas, idx_bind_a, idx_bind_b, dist_gnn, dist_rational, "距离应 > 0 (但可能受结构差异干扰)")
     else:
         print("\033[31m⚠️ 未找到绑定测试样本\033[0m")
 
@@ -315,7 +376,7 @@ def run_perception_test():
             break
 
     if k_strict_a is not None and k_strict_b is not None:
-        compare_pair(atlas, k_strict_a, k_strict_b, "严格控制变量：Edge 相同。Struct 距离应极小。")
+        compare_pair(atlas, k_strict_a, k_strict_b, dist_gnn, dist_rational, "严格控制变量：Edge 相同。Struct 距离应极小。")
     else:
         print("\033[31m⚠️ 未找到严格结构的绑定测试样本 (需要 R-L/B-S 且同结构)\033[0m")
 
@@ -327,7 +388,7 @@ def run_perception_test():
     k_rb = find_koan_advanced(atlas, num_blocks=2, colors=['R', 'B'])
     
     if k_rg is not None and k_rb is not None:
-        compare_pair(atlas, k_rg, k_rb, "Color 距离应中等 (部分重叠)")
+        compare_pair(atlas, k_rg, k_rb, dist_gnn, dist_rational, "Color 距离应中等 (部分重叠)")
     else:
         print("\033[31m❌ 找不到红绿 vs 红蓝样本\033[0m")
 
@@ -340,7 +401,7 @@ def run_perception_test():
     k_rain = find_koan_advanced(atlas, num_blocks=3, colors=['R', 'G', 'B'])
     
     if k_mono is not None and k_rain is not None:
-        compare_pair(atlas, k_mono, k_rain, "Color 距离应很高")
+        compare_pair(atlas, k_mono, k_rain, dist_gnn, dist_rational, "Color 距离应很高")
     else:
         print("\033[31m❌ 找不到纯色 vs 彩虹色样本\033[0m")
 
@@ -354,7 +415,7 @@ def run_perception_test():
     k_max = find_koan_advanced(atlas, num_blocks=3, sizes=['L','L','L'])
     
     if k_min is not None and k_max is not None:
-        compare_pair(atlas, k_min, k_max, "所有指标爆炸。Total Distance 最高。")
+        compare_pair(atlas, k_min, k_max, dist_gnn, dist_rational, "所有指标爆炸。Total Distance 最高。")
     else:
         print("\033[31m❌ 找不到最大对比样本 (1小 vs 3大)\033[0m")
 
