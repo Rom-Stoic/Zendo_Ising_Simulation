@@ -47,7 +47,7 @@ class Config:
     # 依据: 文档 3.4 节 H(s) 定义。
     # 修正: 统一正负例的场强幅度。不再区分 Pos/Neg Multiplier。
     # 任何学习率的不对称性应由 Ising 动力学自发涌现 (Surface Tension)，而非硬编码。
-    PINNING_FIELD_STRENGTH = 5.0  
+    PINNING_FIELD_STRENGTH = 1000.0  
     
     PINNING_FIELD_DECAY_RATE = 0.95 # 记忆衰减系数
 

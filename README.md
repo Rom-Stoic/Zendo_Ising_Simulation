@@ -47,3 +47,16 @@ Ising model求解器。
 ## game.py
 
 运行游戏。
+
+## visualization.ipynb
+
+可视化每一局游戏的玩家数据。
+
+## view_koan.py
+
+输出单个公案的物理数据方便查看。
+
+使用方式：
+
+- 方式1：python view_koan.py 0（0为公案编号，可替换为其他编号）
+- 方式2：python view_koan.py 然后输入公案编号（可连续交互），输入 q 退出
