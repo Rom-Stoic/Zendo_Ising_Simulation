@@ -46,7 +46,7 @@ class IsingModel:
         # 计算高斯衰减耦合
         # 注意：文档公式中指数部分是距离的平方 D^2
         decay_factor = - (distance_matrix ** 2) / (2 * (sigma ** 2))
-        self.J_matrix = J0 * np.exp(decay_factor)
+        self.J_matrix = (J0 / self.num_koans) * np.exp(decay_factor)
         
         # 物理约束：自旋不与自身发生交换作用 (J_ii = 0)
         # 虽然数学上包含自能项，但在 MCMC 动力学中通常置零以避免计算冗余
