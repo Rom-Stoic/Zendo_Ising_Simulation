@@ -291,13 +291,18 @@ class ZendoGame:
             print(f"   🔄 Round {round_num+1}: 检验 Koan #{best_test_idx} -> {result_str} | 当前已知: {len(known_pos)}正/{len(known_neg)}反")
 
             # F. Slow Dynamics (Update Attention)
-            # [Audit Fix] 显式选择能量最低的假设用于学习，而非简单的列表第一个
-            # 能量越低，说明越符合当前的物理约束和观测数据
-            best_h = min(current_hypotheses, key=lambda h: self.physics.compute_energy(h))
+            # [Refactor] 使用对比度量学习，直接从已知样本索引更新注意力
+            # 不再依赖假设的能量，而是基于正例/反例的距离对比
+            print(f"      🧠 更新注意力 (Learner): Pos={len(known_pos)}, Neg={len(known_neg)}")
             
-            current_attention = self.learner.update_attention(current_attention, best_h, self.physics)
+            current_attention = self.learner.update_attention(
+                current_attention, 
+                known_pos, 
+                known_neg
+            )
             
-            # print(f"      🧠 Attention Updated: Color={current_attention[0]:.2f}, Size={current_attention[1]:.2f}, ...")
+            print(f"      ⚖️  新权重: C={current_attention[0]:.2f}, S={current_attention[1]:.2f}, "
+                  f"G={current_attention[2]:.2f}, T={current_attention[3]:.2f}")
 
         # --- Final Evolution (Round 8 Logic) ---
         print("   ⚡ 执行最终动力学演化...")

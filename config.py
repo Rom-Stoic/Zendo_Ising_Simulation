@@ -64,7 +64,7 @@ class Config:
     ATTENTION_SOFTMAX_TEMP = 1.0 
     
     # 注意力更新的学习率 (Eta, η)
-    LEARNING_RATE = 0.05
+    LEARNING_RATE = 0.05 
 
     # =========================================================================
     # 4. 动力学演化参数 (Dynamics / MCMC / DPP)

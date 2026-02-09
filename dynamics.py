@@ -159,78 +159,102 @@ class DPP:
 
 class SlowLearner:
     """
-    慢动力学学习器 (Slow Dynamics / Meta-Learning)
+    慢动力学学习器 (Slow Dynamics / Meta-Learning) - 对比学习版
     
     功能:
-    根据当前最佳假设的反馈，通过梯度下降更新注意力权重 (Omega)。
-    这模拟了人类的反思过程：“我之前的关注点是不是错了？”
+    使用鲁棒的对比度量学习 (Robust Contrastive Metric Learning) 更新注意力权重。
+    通过最小化类内距离 (Intra-class Distance) 和最大化类间距离 (Inter-class Distance) 
+    来调整特征空间中的注意力分配。
+    
+    设计原则:
+    - 支持冷启动 (Cold Start): 处理只有1个正例或0个反例的场景
+    - 数值鲁棒: 防止 NaN/Inf，确保梯度有界
+    - 物理可解释性: 梯度方向明确对应"拉近正例/推远反例"
     """
     
     def __init__(self, atlas):
         """
         Args:
-            atlas: KoanAtlas 实例，提供基础距离矩阵张量
+            atlas: KoanAtlas 实例，必须包含预计算的 dist_basis (N, N, 4)
         """
         self.atlas = atlas
+        # 确保距离基石已加载
+        if not hasattr(self.atlas, 'dist_basis') or self.atlas.dist_basis is None:
+            raise ValueError("SlowLearner 需要 KoanAtlas 加载 dist_basis。请确保运行过 precompute.py 并启用了 load_distances=True")
 
-    def update_attention(self, current_attention, best_spins, ising_model, learning_rate=Config.LEARNING_RATE):
+    def update_attention(self, current_attention, known_pos_indices, known_neg_indices, 
+                        learning_rate=Config.LEARNING_RATE):
         """
-        执行一步梯度下降更新注意力参数
+        执行一步对比学习更新注意力参数
         
         Args:
             current_attention: 当前注意力权重 [w_c, w_s, w_g, w_t]
-            best_spins: 当前轮次的最优假设 s* (N,)
-            ising_model: 物理引擎 (包含当前的 J 矩阵)
+            known_pos_indices: 已知正例的索引列表 (list or array)
+            known_neg_indices: 已知反例的索引列表 (list or array)
+            learning_rate: 学习率
             
         Returns:
             new_attention: 更新并归一化后的注意力权重
         """
-        # ---------------------------------------------------------
-        # 梯度推导 (Chain Rule):
-        # 目标: 最小化能量 H(s*) 关于权重 w_k 的导数
-        # 
-        # dH/dw_k = sum_{i,j} (dH/dJ_ij) * (dJ_ij/dD_total) * (dD_total/dw_k)
-        # 
-        # 最终推导结果 (Audit Verified):
-        # dH/dw_k = (0.5 / sigma^2) * sum_{i,j} (s_i * s_j * J_ij * D_total * D_k)
-        # ---------------------------------------------------------
+        # 转换为 numpy array 以便索引
+        pos_idx = np.array(known_pos_indices, dtype=int)
+        neg_idx = np.array(known_neg_indices, dtype=int)
         
-        # 1. 获取中间变量
-        sigma_sq = Config.SIGMA ** 2
+        gradients = np.zeros(4)
         
-        # 当前的总距离矩阵 D_total (N, N)
-        # D_total = sum(w_k * D_k)
-        D_total = self.atlas.get_weighted_distance_matrix(current_attention)
-        
-        # 自旋的外积矩阵 S_outer[i,j] = s_i * s_j
-        S_outer = np.outer(best_spins, best_spins)
-        
-        # 2. 计算公共梯度项 (Common Term)
-        # Combine: (0.5 / sigma^2) * (S * J * D)
-        # 注意：这里全部是元素级乘法 (Hadamard Product)
-        common_term = (0.5 / sigma_sq) * (S_outer * ising_model.J_matrix * D_total)
-        
-        # 3. 对每个注意力维度计算梯度
-        gradients = np.zeros_like(current_attention)
-        
-        for k in range(4): # 4个属性维度: Color, Size, Ground, Struct
-            # 获取第 k 个维度的基础距离矩阵 D_k (N, N)
-            # dist_basis shape: (N, N, 4)
+        # 遍历 4 个特征维度 (Color, Size, Ground, Touch)
+        for k in range(4):
+            # 获取该维度的全距离矩阵 D_k (N, N)
             D_k = self.atlas.dist_basis[:, :, k]
             
-            # [Audit Correction] 学习率归一化
-            # 使用 np.mean 代替 np.sum，避免因 N^2 项导致的梯度数值爆炸
-            gradients[k] = np.mean(common_term * D_k)
+            # --- 1. 计算类内距离 (Intra-class Pull) ---
+            # 目标：让正例之间靠得更近
+            if len(pos_idx) > 1:
+                # 使用 np.ix_ 生成网格索引，提取正例两两之间的子矩阵
+                intra_submatrix = D_k[np.ix_(pos_idx, pos_idx)]
+                # 计算平均距离 (排除对角线其实影响不大，因为对角线为0且是对称的)
+                mean_intra = np.mean(intra_submatrix)
+            else:
+                # 冷启动：只有1个或0个正例，无法计算聚集程度，梯度贡献为0
+                mean_intra = 0.0
+                
+            # --- 2. 计算类间距离 (Inter-class Push) ---
+            # 目标：让正例和反例离得更远
+            if len(pos_idx) > 0 and len(neg_idx) > 0:
+                # 提取正例行、反例列构成的子矩阵
+                inter_submatrix = D_k[np.ix_(pos_idx, neg_idx)]
+                mean_inter = np.mean(inter_submatrix)
+            else:
+                # 冷启动：没有反例，无法对比，梯度贡献为0
+                mean_inter = 0.0
             
-        # 4. 梯度下降更新
-        # new_w = old_w - lr * grad
+            # --- 3. 计算梯度 ---
+            # Loss = Intra - Inter
+            # 我们希望 Intra 越小越好 (梯度正)，Inter 越大越好 (梯度负)
+            # Grad = d(Loss)/dw = Intra_dist - Inter_dist
+            # 逻辑：
+            # 如果 Intra 很大(正例在该维度很散)，Grad > 0，w = w - lr*Grad (权重减小) -> 正确，因为该特征无效
+            # 如果 Inter 很大(正负在该维度分很开)，Grad < 0，w = w - lr*Grad (权重增加) -> 正确，这是关键特征
+            gradients[k] = mean_intra - mean_inter
+
+        # --- 4. 更新权重 ---
         new_attention = current_attention - learning_rate * gradients
         
-        # 5. 投影与归一化 (Projected Gradient Descent)
-        # 约束1: 权重必须非负 (给一个小的 epsilon 防止 0)
+        # 检查 NaN (防止数值异常导致崩溃)
+        if np.any(np.isnan(new_attention)):
+            print("⚠️ 警告: Attention update 产生 NaN，回滚到上一步权重。")
+            return current_attention
+
+        # --- 5. 投影与归一化 ---
+        # 约束1: 权重必须非负且保持最小活性 (Projected Gradient)
         new_attention = np.maximum(new_attention, 0.01)
         
-        # 约束2: 权重之和为 1
-        new_attention = new_attention / np.sum(new_attention)
-        
+        # 约束2: 权重之和为 1 (Simplex Projection)
+        total_weight = np.sum(new_attention)
+        if total_weight > 0:
+            new_attention = new_attention / total_weight
+        else:
+            # 极端情况防御
+            new_attention = np.array([0.25, 0.25, 0.25, 0.25])
+            
         return new_attention
