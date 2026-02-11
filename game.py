@@ -260,22 +260,73 @@ class ZendoGame:
             # ------------------------------------
 
             # D. Experiment / Test (Build a Koan)
-            # 主动学习：找到 3 个假设分歧最大的未知公案
-            # 所谓分歧最大，就是 mean(predictions) 最接近 0 (即 +1 和 -1 各半)
+            # 主动学习 (Revised): 局部反事实 + 最大信息增益
+            # 目标：选择一个公案，它既能最大化假设分歧，又是对最近正例的"局部最小修改"
             
             # 1. 排除已知公案
             known_set = set(known_pos) | set(known_neg)
             unknown_mask = np.ones(self.atlas.num_koans, dtype=bool)
             unknown_mask[list(known_set)] = False
-            unknown_indices = np.where(unknown_mask)[0]
             
-            # 2. 计算分歧
-            hyp_matrix = np.array(current_hypotheses) # (3, N)
-            votes = np.sum(hyp_matrix, axis=0) # (N,) range [-3, 3]
-            disagreement = -np.abs(votes) # 绝对值越小(越接近0)，分歧越大
+            # 2. 确定锚点 (Anchor): 最近的一个正例
+            if len(known_pos) > 0:
+                anchor_idx = known_pos[-1]
+            else:
+                anchor_idx = 0 # Fallback
+                
+            # 3. 确定目标特征维度 (Target Feature)
+            # 根据注意力权重概率性选择。注意力越高，被选为"控制变量实验对象"的概率越大
+            att_logits = current_attention
+            # 数值稳定 Softmax
+            exp_logits = np.exp(att_logits - np.max(att_logits))
+            att_probs = exp_logits / np.sum(exp_logits)
+            f_target = np.random.choice(4, p=att_probs)
             
-            # 只在未知公案中找
-            best_test_idx = unknown_indices[np.argmax(disagreement[unknown_indices])]
+            feat_names = ["Color", "Size", "Ground", "Touch"]
+            # print(f"   🎯 目标特征: {feat_names[f_target]} (Anchor: #{anchor_idx})")
+
+            # 4. 计算综合评分
+            # Score = G_info - lambda * C_local
+            
+            # [Score 1] G_info: 分歧度 (方差)
+            # hyp_stack: (3, N) -> var: (N,)
+            g_info = np.var(hyp_stack, axis=0) 
+            
+            # [Score 2] C_local: 局部修改成本
+            # dist_vecs: (N, 4) - 所有公案到锚点的特征距离
+            dist_vecs = self.atlas.dist_basis[:, anchor_idx, :]
+            
+            # 构造惩罚系数: 非目标维度给予高惩罚 (lambda >> 1)，目标维度正常 (lambda=1)
+            # 这样会迫使选择那些"在目标维度有变化，但其他维度尽可能不变"的公案
+            LAMBDA_CONTROL = 100.0
+            betas = np.full(4, LAMBDA_CONTROL)
+            betas[f_target] = 1.0
+            
+            # c_local (N,)
+            c_local = np.sum(dist_vecs * betas, axis=1)
+            
+            # 5. 硬约束与评分结合
+            # 约束: 目标维度必须发生变化 (Distance > epsilon)
+            EPSILON = 1e-3
+            has_change_mask = dist_vecs[:, f_target] > EPSILON
+            
+            # 综合评分 (lambda_balance 用于平衡 方差[0~1] 和 距离成本)
+            LAMBDA_BALANCE = 2.0 
+            total_scores = g_info - LAMBDA_BALANCE * c_local
+            
+            # 应用掩码 (Unknown & Hard Constraint)
+            final_mask = unknown_mask & has_change_mask
+            
+            # Fallback: 如果没有公案满足硬约束(极其罕见)，则只看分歧
+            if not np.any(final_mask):
+                final_mask = unknown_mask
+                total_scores = g_info
+            
+            # 选出最佳者
+            # 将不合法的设为 -inf
+            total_scores[~final_mask] = -np.inf
+            best_test_idx = np.argmax(total_scores)
+
             
             # E. Ground Truth Check
             truth = gt_vector[best_test_idx]
