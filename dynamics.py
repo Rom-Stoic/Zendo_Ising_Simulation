@@ -6,12 +6,12 @@ from numba import jit
 # 将核心逻辑剥离为静态函数，以便 JIT 优化
 # nopython=True 确保完全编译为机器码，不回退到 Python 对象模式
 @jit(nopython=True)
-def _glauber_core(spins, J_matrix, h_field, steps, beta):
+def _glauber_core(spins, J_matrix, h_field, steps, betas):
     n_koans = len(spins)
     # 显式复制，避免修改输入数组
     current_spins = spins.copy()
     
-    for _ in range(steps):
+    for step in range(steps):
         # 1. 随机选择一个公案节点尝试翻转
         idx = np.random.randint(0, n_koans)
         
@@ -32,8 +32,8 @@ def _glauber_core(spins, J_matrix, h_field, steps, beta):
         # 注意: current_spins[idx] 是翻转前的状态
         delta_E = 2.0 * current_spins[idx] * local_field
         
-        # 3. Glauber Dynamics 接受准则
-        # P(flip) = 1 / (1 + exp(beta * delta_E))
+        # 3. Glauber Dynamics 接受准则，使用该步对应的退火 beta
+        beta = betas[step]
         prob = 1.0 / (1.0 + np.exp(beta * delta_E))
         
         if np.random.rand() < prob:
@@ -66,6 +66,12 @@ class FastSolver:
         Returns:
             spins: 演化达到(准)稳态后的自旋配置 s*
         """
+        # 生成退火的 beta 序列 (指数降温)
+        start_t = getattr(Config, 'MCMC_START_TEMP', 2.0)
+        end_t = getattr(Config, 'MCMC_END_TEMP', 0.01)
+        temperatures = start_t * (end_t / start_t) ** (np.arange(steps) / max(1, steps - 1))
+        betas = 1.0 / temperatures
+
         # 调用加速后的内核
         # 必须传入纯 NumPy 数组，不能传入对象
         return _glauber_core(
@@ -73,7 +79,7 @@ class FastSolver:
             ising_model.J_matrix, 
             ising_model.h_field, # [Critical] 必须传入外部场，否则无法学习
             steps, 
-            Config.MCMC_BETA
+            betas  # 使用退火的 betas 序列
         )
 
 
