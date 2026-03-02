@@ -68,9 +68,13 @@ Ising model求解器。
 
 运行游戏。
 
-## visualization.ipynb
+## visualization_multi.ipynb
 
-可视化每一局游戏的玩家数据。
+可视化每一局游戏的玩家数据，策略是基于DPP的多假设生成。
+
+## visualization_average.ipynb
+
+可视化玩家数据，策略是多假设融合的带信心水平的假设。
 
 ## view_koan.py
 
