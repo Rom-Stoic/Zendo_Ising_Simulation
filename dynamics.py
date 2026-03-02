@@ -66,10 +66,17 @@ class FastSolver:
         Returns:
             spins: 演化达到(准)稳态后的自旋配置 s*
         """
-        # 生成退火的 beta 序列 (指数降温)
-        start_t = getattr(Config, 'MCMC_START_TEMP', 2.0)
-        end_t = getattr(Config, 'MCMC_END_TEMP', 0.01)
-        temperatures = start_t * (end_t / start_t) ** (np.arange(steps) / max(1, steps - 1))
+        # 生成 beta 序列 (支持通过 Config.USE_ANNEALING 切换恒温/退火模式)
+        use_annealing = getattr(Config, 'USE_ANNEALING', True)
+        
+        if use_annealing:
+            start_t = getattr(Config, 'MCMC_START_TEMP', 2.0)
+            end_t = getattr(Config, 'MCMC_END_TEMP', 0.8) # 提高底温防止"纯铁磁相"死锁
+            temperatures = start_t * (end_t / start_t) ** (np.arange(steps) / max(1, steps - 1))
+        else:
+            fixed_t = getattr(Config, 'MCMC_TEMP', 1.0) # 恒温默认处于临界温度Tc
+            temperatures = np.full(steps, fixed_t)
+            
         betas = 1.0 / temperatures
 
         # 调用加速后的内核
