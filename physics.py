@@ -57,35 +57,40 @@ class IsingModel:
         # 虽然数学上包含自能项，但在 MCMC 动力学中通常置零以避免计算冗余
         np.fill_diagonal(self.J_matrix, 0.0)
 
-    def set_pinning_field(self, positive_indices, negative_indices, round_num):
+    def set_pinning_field(self, positive_indices, negative_indices, round_num, discovery_times=None):
         """
         设置外部钉扎场 (Pinning Field) h_i
         
-        对应 Pinning Field 定义:
-        h_i = +B(t)  若 K_i 符合真理 (Known Positive)
-        h_i = -B(t)  若 K_i 不符合真理 (Known Negative)
-        h_i = 0      若 K_i 未知 (Unknown)
-    
         Args:
             positive_indices (list/array): 已知正例的 ID 列表
             negative_indices (list/array): 已知反例的 ID 列表
             round_num (int): 当前游戏轮次 (用于计算记忆衰减)
+            discovery_times (dict, optional): {koan_idx: discovery_round} 记录每个线索的发现时间。
+                                            如提供，则按记忆年龄 (current_round - discovery_round) 独立衰减。
         """
         # 1. 重置场
         self.h_field = np.zeros(self.num_koans, dtype=np.float32)
         
-        # 2. 计算当前轮次的场强度 B(t)
-        # [Audit Fix]: 修正了参数传递错误。Config方法不需要 is_positive_example 参数。
-        # 依据 Config 注释：统一正负例的场强幅度。
-        field_strength = Config.get_decayed_pinning_field(round_num)
+        base_strength = Config.PINNING_FIELD_STRENGTH
+        decay_rate = Config.PINNING_FIELD_DECAY_RATE
         
-        # 3. 施加钉扎
-        if len(positive_indices) > 0:
-            self.h_field[positive_indices] = field_strength
+        # 内部函数：计算单个公案的当前场强
+        def get_strength(idx):
+            if discovery_times is not None and idx in discovery_times:
+                # 记忆驱动模式：根据该线索被发现的时间计算"记忆年龄"
+                age = max(0, round_num - discovery_times[idx])
+                return base_strength * (decay_rate ** age)
+            else:
+                # 兼容模式：所有线索统一衰减 (基于全局轮次)
+                return base_strength * (decay_rate ** round_num)
+
+        # 2. 施加正向钉扎 (Positive Pinning)
+        for idx in positive_indices:
+            self.h_field[idx] = get_strength(idx)
             
-        if len(negative_indices) > 0:
-            # 反例对应负场 -B(t)，但幅度与正例完全一致
-            self.h_field[negative_indices] = -field_strength
+        # 3. 施加负向钉扎 (Negative Pinning)
+        for idx in negative_indices:
+            self.h_field[idx] = -get_strength(idx)
             
         # 4. (已移除) 稀疏性偏差
         # self.h_field -= Config.SPARSITY_BIAS
