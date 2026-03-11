@@ -77,6 +77,10 @@ class IsingModel:
         # 内部函数：计算单个公案的当前场强
         def get_strength(idx):
             if discovery_times is not None and idx in discovery_times:
+                # [New Request] 初始正例 (Time=0) 永不衰减，始终保持满额强度
+                if discovery_times[idx] == 0:
+                    return base_strength
+
                 # 记忆驱动模式：根据该线索被发现的时间计算"记忆年龄"
                 age = max(0, round_num - discovery_times[idx])
                 return base_strength * (decay_rate ** age)
