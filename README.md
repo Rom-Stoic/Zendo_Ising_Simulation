@@ -76,6 +76,10 @@ Ising model求解器。
 
 可视化玩家数据，策略是多假设融合的带信心水平的假设。
 
+## visualization_surprise.ipynb
+
+可视化玩家数据，策略是Aggression+Surprise Driven假设检验策略。
+
 ## view_koan.py
 
 输出单个公案的物理数据方便查看。
